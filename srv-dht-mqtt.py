@@ -2,12 +2,13 @@
 
 import os
 import time
-import logging
 import random
+import logging
 import argparse
 
 import paho.mqtt.client as mqtt
 import dht
+
 
 class Service:
 
@@ -20,6 +21,7 @@ class Service:
         self.client_id = f'srv-dht-mqtt-{random.randint(0, 1000):03d}'
         self.topic_temperature = "srv-dht/temperature"
         self.topic_humidity = "srv-dht/humidity"
+        self.interval = 1.0  # second
 
         self.dht = dht.DHT22(self.pin)
         self.dht.delay_between_readings = 0.5
@@ -28,13 +30,12 @@ class Service:
         if self.mqtt_user:
             self.client.username_pw_set(self.mqtt_user, self.mqtt_pass)
         self.client.on_connect = self._on_connect
-        # self.client.on_message = self._on_message
 
         self.logger = logging.getLogger(__name__)
 
     def start(self):
+        self.logger.info("Start service")
         self.client.connect(self.mqtt_host, self.mqtt_port, 60)
-        # self.client.loop_forever()
         self.client.enable_logger()
         self.client.loop_start()
         while True:
@@ -42,9 +43,10 @@ class Service:
                 temperature, humidity = self.dht.measure()
                 self.client.publish(self.topic_temperature, temperature)
                 self.client.publish(self.topic_humidity, humidity)
+                self.logger.info("Temperature/humidity was sent")
             except RuntimeError as e:
-                self.logger.debug("RT Error: %s", e)
-            time.sleep(1)
+                self.logger.info("DHT return error: %s", e)
+            time.sleep(self.interval)
     
     def _on_connect(self, client, userdata, flags, rc):
         """The callback for when the client receives a CONNACK response
@@ -53,19 +55,12 @@ class Service:
         reconnect then subscriptions will be renewed.
         """
         if rc == 0:
-            print("Connected to MQTT Broker!")
+            self.logger.info("Connected to MQTT broker [rc=%s]", rc)
         else:
-            print("Failed to connect, return code %d\n", rc)
-        self.logger.debug("Connected with result code %s", rc)
-        # self.client.subscribe("$SYS/#")
-    
-    def _on_message(self, client, userdata, msg):
-        """The callback for when a PUBLISH message is received from the server.
-        """
-        self.logger.debug(msg.topic + " " + str(msg.payload))
+            self.logger.error("Failed to connect, return code [rc=%s]", rc)
 
     def stop(self):
-        pass
+        self.logger.info("Stop service")
 
 
 def arguments():
@@ -89,11 +84,34 @@ def arguments():
         type=int,
         default=int(os.environ.get("SRV_MQTT_DHT_PIN", 0))
     )
+    parser.add_argument(
+        "--log-level",
+        type=int,
+        default=int(os.environ.get("SRV_LOG_LEVEL", 4)),
+        choices=[1, 2, 3, 4, 5],
+        help=(
+            "Logging level, debug(1), info(2), warning(3), "
+            "error(4, default), critical(5)"
+        )
+    )
     return parser.parse_args()
+
+
+def config_logger(log_level: int):
+    # format
+    LOG_FORMAT = '%(filename)s[LINE:%(lineno)d]# %(levelname)-8s [%(asctime)s] %(message)s'
+    logging.basicConfig(format=LOG_FORMAT)
+
+    log_level = logging.getLevelName(log_level * 10)
+    logger = logging.getLogger()  # default
+    logger_service = logging.getLogger(__name__)
+    logger.setLevel(log_level)
+    logger_service.setLevel(log_level)
 
 
 if __name__ == "__main__":
     args = arguments()
+    config_logger(args.log_level)
     srv = Service(**vars(args))
     try:
         srv.start()
