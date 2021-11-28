@@ -71,21 +71,23 @@ class Service:
 def arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--mqtt-host", type=str, default=os.environ.get("SRV-MQTT-HOST", "")
+        "--mqtt-host", type=str, default=os.environ.get("SRV_MQTT_HOST", "")
     )
     parser.add_argument(
         "--mqtt-port",
         type=int,
-        default=int(os.environ.get("SRV-MQTT-PORT", 1883))
+        default=int(os.environ.get("SRV_MQTT_PORT", 1883))
     )
     parser.add_argument(
-        "--mqtt-user", type=str, default=os.environ.get("SRV-MQTT-USER", "")
+        "--mqtt-user", type=str, default=os.environ.get("SRV_MQTT_USER", "")
     )
     parser.add_argument(
-        "--mqtt-pass", type=str, default=os.environ.get("SRV-MQTT-PASS", "")
+        "--mqtt-pass", type=str, default=os.environ.get("SRV_MQTT_PASS", "")
     )
     parser.add_argument(
-        "--dht-pin", type=int, default=int(os.environ.get("SRV-DHT-PIN", 0))
+        "--dht-pin",
+        type=int,
+        default=int(os.environ.get("SRV_MQTT_DHT_PIN", 0))
     )
     return parser.parse_args()
 
