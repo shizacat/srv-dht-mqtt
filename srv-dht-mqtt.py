@@ -5,9 +5,17 @@ import time
 import random
 import logging
 import argparse
+from dataclasses import dataclass
 
 import paho.mqtt.client as mqtt
 import dht
+
+
+@dataclass
+class Topics:
+    current: str
+    status_active: str
+    status_fault: str
 
 
 class Service:
@@ -19,8 +27,18 @@ class Service:
         self.mqtt_pass = kwargs["mqtt_pass"]
         self.pin = kwargs["dht_pin"]
         self.client_id = f'srv-dht-mqtt-{random.randint(0, 1000):03d}'
-        self.topic_temperature = "srv-dht/temperature"
-        self.topic_humidity = "srv-dht/humidity"
+
+        # Config topics
+        self.topic_temperature = Topics(
+            current="srv-dht/temperature",
+            status_active="srv-dht/temperature-status-active",
+            status_fault="srv-dht/temperature-status-fault",
+        )
+        self.topic_humidity = Topics(
+            current="srv-dht/humidity",
+            status_active="srv-dht/humidity-status-active",
+            status_fault="srv-dht/humidity-status-fault",
+        )
         self.interval = 1.0  # second
 
         self.dht = dht.DHT22(self.pin)
@@ -30,6 +48,8 @@ class Service:
         if self.mqtt_user:
             self.client.username_pw_set(self.mqtt_user, self.mqtt_pass)
         self.client.on_connect = self._on_connect
+        self.client.on_disconnect = self.on_disconnect
+        self.client.connected_flag = False
 
         self.logger = logging.getLogger(__name__)
 
@@ -41,8 +61,8 @@ class Service:
         while True:
             try:
                 temperature, humidity = self.dht.measure()
-                self.client.publish(self.topic_temperature, temperature)
-                self.client.publish(self.topic_humidity, humidity)
+                self.client.publish(self.topic_temperature.current, temperature)
+                self.client.publish(self.topic_humidity.current, humidity)
                 self.logger.info("Temperature/humidity was sent")
             except RuntimeError as e:
                 self.logger.info("DHT return error: %s", e)
@@ -56,11 +76,23 @@ class Service:
         """
         if rc == 0:
             self.logger.info("Connected to MQTT broker [rc=%s]", rc)
+            self.client.connected_flag = True
+            self._update_status(True)
         else:
             self.logger.error("Failed to connect, return code [rc=%s]", rc)
+    
+    def on_disconnect(self, client, userdata, rc):
+        self._update_status(False)
+        self.client.connected_flag = False
 
     def stop(self):
+        if self.client.connected_flag:
+            self._update_status(False)
         self.logger.info("Stop service")
+    
+    def _update_status(self, value: bool):
+        self.client.publish(self.topic_temperature.status_active, value)
+        self.client.publish(self.topic_humidity.status_active, value)
 
 
 def arguments():
