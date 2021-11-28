@@ -40,6 +40,8 @@ class Service:
             status_fault="srv-dht/humidity-status-fault",
         )
         self.interval = 1.0  # second
+        # If the current value is not received within the interval then error
+        self.interval_fault = 60 * 5  # second
 
         self.dht = dht.DHT22(self.pin)
         self.dht.delay_between_readings = 0.5
@@ -58,14 +60,27 @@ class Service:
         self.client.connect(self.mqtt_host, self.mqtt_port, 60)
         self.client.enable_logger()
         self.client.loop_start()
+        
+        ts_last_good = time.monotonic()
+        is_fault = False
         while True:
             try:
                 temperature, humidity = self.dht.measure()
                 self.client.publish(self.topic_temperature.current, temperature)
                 self.client.publish(self.topic_humidity.current, humidity)
+                if is_fault:
+                    self._update_fault(False)
+                    is_fault = False
+                ts_last_good = time.monotonic()
                 self.logger.info("Temperature/humidity was sent")
             except RuntimeError as e:
                 self.logger.info("DHT return error: %s", e)
+                if (
+                    not is_fault 
+                    and (time.monotonic() - ts_last_good) > self.interval_fault
+                ):
+                    is_fault = True
+                    self._update_fault(True)
             time.sleep(self.interval)
     
     def _on_connect(self, client, userdata, flags, rc):
@@ -78,6 +93,7 @@ class Service:
             self.logger.info("Connected to MQTT broker [rc=%s]", rc)
             self.client.connected_flag = True
             self._update_status(True)
+            self._update_fault(False)
         else:
             self.logger.error("Failed to connect, return code [rc=%s]", rc)
     
@@ -93,6 +109,11 @@ class Service:
     def _update_status(self, value: bool):
         self.client.publish(self.topic_temperature.status_active, value)
         self.client.publish(self.topic_humidity.status_active, value)
+    
+    def _update_fault(self, value: bool):
+        self.logger.info("Update fault status: %s", value)
+        self.client.publish(self.topic_temperature.status_fault, value)
+        self.client.publish(self.topic_humidity.status_fault, value)
 
 
 def arguments():
