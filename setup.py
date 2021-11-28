@@ -11,6 +11,6 @@ setup(
     scripts=["srv-dht-mqtt.py"],
     install_requires=[
         "paho-mqtt",
-        "git+https://github.com/shizacat/dht-pi-python@1.0"
+        "dht-pi-python @ git+https://github.com/shizacat/dht-pi-python@1.0#egg=dht-pi-python"
     ],
 )
